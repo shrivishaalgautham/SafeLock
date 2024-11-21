@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeLock - Key Hold Time Anomaly Detection</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      padding: 0;
+      background-color: #f4f4f4;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      font-size: 16px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Key Hold Time Recorder</h1>
+    <textarea id="textBox" placeholder="Type here..."></textarea>
+    <button onclick="sendCSVData()">Submit Key Hold Times</button>
+  </div>
+
+  <script>
+    let keyHoldData = []; // Array to store key hold time data
+    let keyDownTime = null;
+
+    // Capture keydown event to record the start time
+    document.getElementById("textBox").addEventListener("keydown", (event) => {
+      if (!keyDownTime) {
+        keyDownTime = Date.now();
+      }
+    });
+
+    // Capture keyup event to calculate key hold time
+    document.getElementById("textBox").addEventListener("keyup", (event) => {
+      if (keyDownTime) {
+        const keyHoldTime = Date.now() - keyDownTime;
+        keyDownTime = null;
+
+        // Store timestamp and key hold time
+        const timeStamp = new Date().toISOString();
+        keyHoldData.push({ timestamp: timeStamp, value: keyHoldTime });
+      }
+    });
+
+    // Function to convert data to CSV and send it to the server
+    function sendCSVData() {
+      if (keyHoldData.length === 0) {
+        alert("No key hold data to send!");
+        return;
+      }
+
+      // Create CSV content
+      const csvHeader = "timestamp,value\n";
+      const csvContent = keyHoldData
+        .map((row) => `${row.timestamp},${row.value}`)
+        .join("\n");
+      const csvData = csvHeader + csvContent;
+
+      // Send the CSV data to the Flask server
+      fetch("/process_csv", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ csv_data: csvData }),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.status === "success") {
+            alert("Key hold times successfully submitted!");
+            window.location.href = "/results";
+          } else {
+            alert("Error: " + data.error);
+          }
+        })
+        .catch((error) => {
+          alert("An error occurred: " + error.message);
+        });
+    }
+  </script>
+</body>
+</html>

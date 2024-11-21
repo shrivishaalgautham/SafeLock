@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results</title>
+</head>
+<body>
+    <h1>Results</h1>
+    <h2>Anomalies Detected</h2>
+    <p>Isolation Forest Anomalies: {{ iso_forest_anomalies }}</p>
+    <p>One-Class SVM Anomalies: {{ svm_anomalies }}</p>
+
+    <h2>Plots</h2>
+    <div>
+        <h3>Key Hold Time Series</h3>
+        <img src="data:image/png;base64,{{ plots['time_series'] }}" alt="Time Series Plot">
+    </div>
+    <div>
+        <h3>Anomalies Detected by Isolation Forest</h3>
+        <img src="data:image/png;base64,{{ plots['iso_forest'] }}" alt="Isolation Forest Plot">
+    </div>
+    <div>
+        <h3>Anomalies Detected by One-Class SVM</h3>
+        <img src="data:image/png;base64,{{ plots['svm'] }}" alt="One-Class SVM Plot">
+    </div>
+
+    <br>
+    <a href="/">Go Back</a>
+</body>
+</html>
+
