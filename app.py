@@ -11,7 +11,8 @@ import base64
 import io
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Change this to a random secret key for session management
+import os
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback_secret')  # Use env variable for secret key
 
 # Function to save the plot as a base64 string
 def save_plot_as_base64():
@@ -67,51 +68,64 @@ def index():
     return render_template('index.html')
 
 @app.route('/process_csv', methods=['POST'])
+# Helper function: Validate CSV columns
+REQUIRED_COLUMNS = {'timestamp', 'value'}
+def validate_csv(data):
+    if not REQUIRED_COLUMNS.issubset(data.columns):
+        missing = REQUIRED_COLUMNS - set(data.columns)
+        raise ValueError(f"Missing columns in CSV: {', '.join(missing)}")
+
+# Helper function: Clean and preprocess data
+def preprocess_data(data):
+    data['timestamp'] = pd.to_datetime(data['timestamp'])
+    data = data[data['value'] != 0].copy()
+    scaler = MinMaxScaler()
+    data['scaled_value'] = scaler.fit_transform(data[['value']])
+    return data
+
+# Helper function: Detect anomalies
+def detect_anomalies(data, contamination=0.05, nu=0.05):
+    iso_forest = IsolationForest(contamination=contamination, random_state=42)
+    data['iso_forest_outlier'] = iso_forest.fit_predict(data[['scaled_value']])
+    data['iso_forest_outlier'] = data['iso_forest_outlier'].map({1: False, -1: True})
+    one_class_svm = OneClassSVM(kernel='rbf', gamma='auto', nu=nu)
+    data['svm_outlier'] = one_class_svm.fit_predict(data[['scaled_value']])
+    data['svm_outlier'] = data['svm_outlier'].map({1: False, -1: True})
+    return data
+
+@app.route('/process_csv', methods=['POST'])
 def process_csv():
     try:
         if 'csv_data' not in request.form:
             return jsonify({'status': 'error', 'error': 'No CSV data provided'}), 400
-
         csv_data = request.form['csv_data']
         csv_file = io.StringIO(csv_data)
         data = pd.read_csv(csv_file)
-
-        # Convert the 'timestamp' column to datetime format
-        data['timestamp'] = pd.to_datetime(data['timestamp'])
-
-        # Remove rows where the 'value' column is 0
-        data = data[data['value'] != 0].copy()
-
-        # Apply MinMaxScaler to the 'value' column
-        scaler = MinMaxScaler()
-        data['scaled_value'] = scaler.fit_transform(data[['value']])
-
-        # Isolation Forest Implementation
-        iso_forest = IsolationForest(contamination=0.05, random_state=42)
-        data['iso_forest_outlier'] = iso_forest.fit_predict(data[['scaled_value']])
-        data['iso_forest_outlier'] = data['iso_forest_outlier'].map({1: False, -1: True})
-
-        # One-Class SVM Implementation
-        one_class_svm = OneClassSVM(kernel='rbf', gamma='auto', nu=0.05)
-        data['svm_outlier'] = one_class_svm.fit_predict(data[['scaled_value']])
-        data['svm_outlier'] = data['svm_outlier'].map({1: False, -1: True})
-
-        # Create plots
+        try:
+            validate_csv(data)
+        except Exception as ve:
+            return jsonify({'status': 'error', 'error': str(ve)}), 400
+        # Configurable parameters from request or default
+        contamination = float(request.form.get('contamination', 0.05))
+        nu = float(request.form.get('nu', 0.05))
+        try:
+            data = preprocess_data(data)
+            data = detect_anomalies(data, contamination=contamination, nu=nu)
+        except Exception as pe:
+            return jsonify({'status': 'error', 'error': f'Data processing error: {pe}'}), 500
         plots = create_plots(data)
-
-        # Count anomalies and convert to native int
         iso_forest_anomalies = int(data['iso_forest_outlier'].sum())
         svm_anomalies = int(data['svm_outlier'].sum())
-
-        # Store results in session
         session['plots'] = plots
         session['iso_forest_anomalies'] = iso_forest_anomalies
         session['svm_anomalies'] = svm_anomalies
-
         return jsonify({'status': 'success'})
-
     except Exception as e:
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+        # Log the error for server-side debugging
+        import logging
+        logging.exception("Error in process_csv")
+        return jsonify({'status': 'error', 'error': 'Internal server error'}), 500
+
 
 @app.route('/results')
 def results():
@@ -123,5 +137,7 @@ def results():
                            svm_anomalies=svm_anomalies)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=debug_mode)
 
+# Note: Set environment variables SECRET_KEY and FLASK_DEBUG for production use.
